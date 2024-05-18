@@ -1,6 +1,8 @@
 #include "../core/Instance.h"
 
 #include "mtl/Sort.h"
+#include <mpfr/mpreal.h>
+#include "mpc.h"
 
 #include <iostream>
 #include <fstream>
@@ -18,10 +20,25 @@ weighted(false),
 projected(false),
 npvars(0),
 freevars(0),
+one(1),
 gweight(1),
 keepVarMap(false),
 unsat(false)
 {}
+template <>
+Instance<mpc_t*>::Instance() :
+vars(0),
+weighted(false),
+projected(false),
+npvars(0),
+freevars(0),
+keepVarMap(false),
+unsat(false)
+{
+	mpc_init2(*one, mpfr::mpreal::get_default_prec());
+	mpc_set_d_d(*one, 1, 0, MPC_RNDNN);
+	gweight = one;
+}
 
 static inline Lit SignedIntToLit(int signed_int) {
 	assert(signed_int != 0);
@@ -43,8 +60,47 @@ static void Tokens(string buf, vector<string>& ret) {
 	if (ret.back().empty()) ret.pop_back();
 }
 
+
 template <class T_data>
-void Instance<T_data>::load(istream& in, bool weighted, bool projected, bool keepVarMap) {
+void Instance<T_data>::set_lit_weights(vector<string> tokens) {
+	if(weighted && tokens.size() == 6 && tokens.back() == "0") {
+		int lit = stoi(tokens[3]);
+		Lit l = SignedIntToLit(lit);
+		lit_weights[toInt(l)] = tokens[4];
+	}
+}
+
+template <>
+void Instance<mpc_t*>::set_lit_weights(vector<string> tokens) {
+	if(weighted && tokens.size() == 7 && tokens.back() == "0") { //FIXME DEKEL 7 tokens
+		int lit = stoi(tokens[3]);
+		Lit l = SignedIntToLit(lit);
+		mpc_t z;
+		mpc_init2(z, mpfr::mpreal::get_default_prec());
+		mpc_set_d_d(z, stod(tokens[4]), stod(tokens[5]), MPC_RNDNN); //FIXME DEKEL tokens 4,5 are the complex num
+		lit_weights[toInt(l)] = &z;
+	}
+}
+
+template <class T_data>
+void Instance<T_data>::set_gweight(vector<string> tokens) {
+	if(weighted && tokens.size() == 5 && tokens.back() == "0") {
+		gweight = tokens[3];
+	}
+}
+
+template <>
+void Instance<mpc_t*>::set_gweight(vector<string> tokens) {
+	if(weighted && tokens.size() == 6 && tokens.back() == "0") {
+		mpc_t z;
+		mpc_init2(z, mpfr::mpreal::get_default_prec());
+		mpc_set_d_d(z, stod(tokens[4]), stod(tokens[5]), MPC_RNDNN); //FIXME DEKEL tokens 4,5 are the complex num
+		gweight = &z;
+	}
+}
+
+template <class T_data>
+void Instance<T_data>::load(istream& in, bool weighted, bool projected, bool keepVarMap, int precision) {
 	this->weighted = weighted;
 	this->projected = projected;
 	this->keepVarMap = keepVarMap;
@@ -80,7 +136,7 @@ void Instance<T_data>::load(istream& in, bool weighted, bool projected, bool kee
 				}
 
 				if(weighted)
-					lit_weights.resize(2*vars, 1);
+					lit_weights.resize(2*vars, one); 
 			}
 			else
 				cerr << "c c Header Error!" << endl;
@@ -88,11 +144,7 @@ void Instance<T_data>::load(istream& in, bool weighted, bool projected, bool kee
 		else if (tokens[0][0] == 'c') {
 			if(tokens[0] == "c" && tokens[1] == "p") {
 				if(tokens[2] == "weight") {	// Read the weight of a literal
-					if(weighted && tokens.size() == 6 && tokens.back() == "0") {
-						int lit = stoi(tokens[3]);
-						Lit l = SignedIntToLit(lit);
-						lit_weights[toInt(l)] = tokens[4];
-					}
+					set_lit_weights(tokens);
 				}
 				else if(tokens[2] == "show") { // Read the list of projected vars
 					if(projected && tokens.back() == "0") {
@@ -108,9 +160,7 @@ void Instance<T_data>::load(istream& in, bool weighted, bool projected, bool kee
 					}
 				}
 				else if(tokens[2] == "gweight") {
-					if(weighted && tokens.size() == 5 && tokens.back() == "0") {
-						gweight = tokens[3];
-					}
+					set_gweight(tokens);
 				}
 			}
 			else if(tokens[0] == "cr") {
@@ -351,7 +401,7 @@ template <class T_data>
 			out << "c p weight -" << (i+1) << " " << lit_weights[toInt(~mkLit(i))] << " 0" << endl;
 		}
 
-		if(gweight != 1) {
+		if(gweight != one) {
 			out << "c p gweight " << gweight << " 0" << endl;
 		}
 	}
@@ -372,5 +422,16 @@ template <class T_data>
 	*/
 }
 
+template <>
+Instance<mpc_t*>::~Instance() {
+	for (int i=0; i<npvars; i++) {
+		mpc_clear(*lit_weights[toInt(mkLit(i))]);
+		mpc_clear(*lit_weights[toInt(~mkLit(i))]);
+		mpc_clear(*one);
+		mpc_clear(*gweight);
+	}
+}
+
+template class GPMC::Instance<mpc_t*>;
 template class GPMC::Instance<mpz_class>;
 template class GPMC::Instance<mpfr::mpreal>;

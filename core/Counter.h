@@ -28,11 +28,13 @@ public:
 	// Constructor/Destructor
 	//
 	Counter(Configuration& config);
-	~Counter() { };
+	~Counter();
 
 	// Methods
 	//
 	void load(std::istream& in); 					// load an input instance
+	void set_npmodels(int value);
+	T_data mul(T_data value, T_data fact);
 	bool preprocess();								// preprocessing for simplification
 	void setExtraVarScore();							// set exscore
 	bool countModels();		    					// main count method
@@ -113,6 +115,7 @@ protected:
 	Lit  last_lit;
 
 	vec<T_data> lit_weight;	// literal weight
+	const T_data one;		// weight of one
 	T_data gweight;			// global weight
 
 	vec<double> exscore;		// extra score for variable selection

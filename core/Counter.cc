@@ -1,5 +1,6 @@
 #include <gmpxx.h>
 #include "mpfr/mpreal.h"
+#include "mpc.h"
 #include "core/Counter.h"
 #include "mtl/Sort.h"
 #include "utils/System.h"
@@ -39,6 +40,7 @@ Counter<T_data>::Counter(Configuration& config_) :
 , last_bklevel       (0)
 , last_cr            (CRef_Undef)
 , last_lit           (lit_Undef)
+, one				(1)
 , gweight				(1)
 , on_bj				(config_.cntr.backjump)
 , on_simp				(config_.cntr.remove_sat_cls)
@@ -62,12 +64,76 @@ Counter<T_data>::Counter(Configuration& config_) :
 	pp.setConfig(config_.pp);
 	cmpmgr.setConfig(config_.cm);
 }
+
+template <>
+Counter<mpc_t*>::Counter(Configuration& config_) :
+  sat					(false)
+, config				(config_.cntr)
+, tdconfig				(config_.td)
+, conflicts_pre      (0)
+, decisions_pre      (0)
+, propagations_pre   (0)
+, conflicts_sg       (0)
+, decisions_sg       (0)
+, propagations_sg    (0)
+, sats               (0)
+, nbackjumps         (0)
+, nbackjumps_sp      (0)
+, reduce_dbs_pre     (0)
+, simp_dbs           (0)
+, simplify_time      (0.0)
+, npvars             (0)
+, npvars_isolated    (0)
+, limlevel           (0)
+, last_suc           (false)
+, last_bklevel       (0)
+, last_cr            (CRef_Undef)
+, last_lit           (lit_Undef)
+, on_bj				(config_.cntr.backjump)
+, on_simp				(config_.cntr.remove_sat_cls)
+, progress				(INIT)
+, verbosity_c        (1)
+{
+	verbosity = 0;
+	showModel = false;
+
+	mpc_init2(*one, mpfr::mpreal::get_default_prec());
+	mpc_set_d_d(*one, 1, 0, MPC_RNDNN);
+
+	mpc_init2(*gweight, mpfr::mpreal::get_default_prec());
+	mpc_set_d_d(*gweight, 1, 0, MPC_RNDNN);
+
+	mpc_init2(*npmodels, mpfr::mpreal::get_default_prec());
+	mpc_set_d_d(*npmodels, 0, 0, MPC_RNDNN);
+	
+
+	switch(config_.cntr.mode) {
+	case MC:
+		wc = false, mc = true; break;
+	case WMC:
+		wc = true, mc = true; break;
+	case PMC:
+		wc = false, mc = false; break;
+	case WPMC:
+		wc = true, mc = false; break;
+	}
+
+	pp.setConfig(config_.pp);
+	cmpmgr.setConfig(config_.cm);
+}
+
+template <typename T_data>
+Counter<T_data>::~Counter() {}
+
+template <>
+Counter<mpc_t*>::~Counter() {mpc_clear(*gweight); mpc_clear(*npmodels);}
+
 //=================================================================================================
 // Load instance
 template <typename T_data>
 void Counter<T_data>::load(std::istream& in)
 {
-	ins.load(in, wc, !mc, config.keepVarMap);
+	ins.load(in, wc, !mc, config.keepVarMap, 15); // FIXME DEKEL max(config.cntr.precision,15));
 
 	if(config.vs_infile != "NULL") {
 		std::ifstream vin(config.vs_infile);
@@ -85,6 +151,27 @@ void Counter<T_data>::load(std::istream& in)
 }
 //=================================================================================================
 // Preprocessing
+
+template <typename T_data>
+void Counter<T_data>::set_npmodels(int value) {
+	npmodels = value;
+}
+template <>
+void Counter<mpc_t*>::set_npmodels(int value) {
+	mpc_set_si(*npmodels, value, MPC_RNDNN);
+}
+
+template <typename T_data>
+T_data Counter<T_data>::mul(T_data value, T_data fact) {
+	return value * fact;
+}
+template <>
+mpc_t* Counter<mpc_t*>::mul(mpc_t* value, mpc_t* fact) {
+	mpc_mul(*value, *value, *fact, MPC_RNDNN);
+	return value;
+}
+
+
 template <typename T_data>
 bool Counter<T_data>::preprocess()
 {
@@ -103,7 +190,7 @@ bool Counter<T_data>::preprocess()
 			gweight = ins.gweight;
 		}
 		else {
-			npmodels = ((T_data)1) << ins.freevars;
+			set_npmodels(1 << ins.freevars);
 			npvars_isolated = ins.freevars;
 		}
 
@@ -189,7 +276,7 @@ void Counter<T_data>::count_main()
 
 	btStateT bstate = RESOLVED;
 	limlevel = 0;
-	cmpmgr.init(nVars(),nPVars(),clauses,ca);
+	cmpmgr.init(nVars(),nPVars(),clauses,ca,one);
 
 	for(;;) {
 		assert(!cmpmgr.topDecision().hasUnprocessedSplitComp());
@@ -262,7 +349,7 @@ void Counter<T_data>::count_main()
 
 			if(nsplitcomps == 0) {
 				// NO NEW COMPONENT (#MODELS of the current component is found)
-				cmpmgr.topDecision().increaseModels((T_data)1, true);
+				cmpmgr.topDecision().increaseModels(one, true);
 				bstate = backtrack();
 			}
 			else {
@@ -276,9 +363,9 @@ void Counter<T_data>::count_main()
 
 					if(sat_status == l_True) {
 						sats++;
-						cmpmgr.topDecision().increaseModels((T_data)1, true);
+						cmpmgr.topDecision().increaseModels(one, true);
 						if(!cmpmgr.topComponent().hasPVar())
-							cmpmgr.cacheModelCountOf(cmpmgr.topComponent().id(),1,TOP_NODE);
+							cmpmgr.cacheModelCountOf(cmpmgr.topComponent().id(),one,TOP_NODE);
 						cmpmgr.eraseComponentStackID();
 						cmpmgr.popComponent();
 					}
@@ -336,7 +423,7 @@ void Counter<T_data>::count_main()
 		Lit dlit = mkLit(dec_var, polarity[dec_var]);
 		uncheckedEnqueue(dlit);
 		if(config.watchCand) {
-			if(wc) cmpmgr.topDecision().setBranchWeight(lit_weight[toInt(dlit)]);
+			if(wc) cmpmgr.topDecision().setBranchWeight(lit_weight[toInt(dlit)]); // DEKEL should be fine
 			if(config.ddnnf) cmpmgr.setDecisionNode(dlit);
 			cmpmgr.setDecCand();
 		}
@@ -348,7 +435,7 @@ void Counter<T_data>::count_main()
 	}
 
 	if(wc)
-		npmodels = cmpmgr.topDecision().totalModels() * gweight;
+		npmodels = cmpmgr.topDecision().totalModels() * gweight; // DEKEL should be fine
 	else
 		npmodels = cmpmgr.topDecision().totalModels() << nIsoPVars();
 }
@@ -913,9 +1000,9 @@ T_data Counter<T_data>::mcDDNNF() {
 
 	DTNodeManager& nm = cmpmgr.NodeManager();
 	if(wc)
-		return nm.countModel(lit_weight, wc) * gweight;
+		return mul(nm.countModel(lit_weight, wc), gweight);
 	else
-		return nm.countModel(lit_weight, wc) << nIsoPVars();
+		return mul(nm.countModel(lit_weight, wc), 1 << nIsoPVars());
 }
 
 //=================================================================================================
@@ -1127,3 +1214,4 @@ inline unsigned int Counter<T_data>::computeLBDMC(const Clause &c) {
 
 template class GPMC::Counter<mpz_class>;
 template class GPMC::Counter<mpfr::mpreal>;
+template class GPMC::Counter<mpc_t*>;

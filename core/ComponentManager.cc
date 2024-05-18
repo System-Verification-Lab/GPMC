@@ -7,7 +7,7 @@ using namespace GPMC;
 #define CACHE
 
 template <typename T_data>
-void ComponentManager<T_data>::init(int nvars, int npvars, const vec<CRef>& sclauses, const ClauseAllocator& sca){
+void ComponentManager<T_data>::init(int nvars, int npvars, const vec<CRef>& sclauses, const ClauseAllocator& sca, T_data one_){
 	vec< vec<Var> > binlinks(nvars);
 	vec< vec<ClID> > occ(nvars);
 
@@ -62,8 +62,9 @@ void ComponentManager<T_data>::init(int nvars, int npvars, const vec<CRef>& scla
 
 	nodeMgr.init(npvars_);
 
+	one = one_;
 	initComponentStack(nvars, clauses_.size());
-	initDecisionStack();
+	initDecisionStack(one);
 
 	components = 1;
 	num_try_split = 0;
@@ -88,10 +89,10 @@ void ComponentManager<T_data>::initComponentStack(int nvars, int nlongcls) {
 }
 
 template <typename T_data>
-void ComponentManager<T_data>::initDecisionStack()
+void ComponentManager<T_data>::initDecisionStack(T_data one)
 {
 	dl_.clear();
-	dl_.push_back(Decision<T_data>(0,0));
+	dl_.push_back(Decision<T_data>(0,0, one));
 	dl_.back().changeBranch();
 	dl_.back().setNodeIdx(nodeMgr.newNode(DT_AND));
 }

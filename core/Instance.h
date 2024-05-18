@@ -12,12 +12,15 @@ namespace GPMC {
 // values for variable map
 const Glucose::Var var_Determined = {-2};
 
-template <class T_data>
+template <class T_data> 
 class Instance {
 public:
 	Instance();
+	~Instance();
 
-	void load			(std::istream& in, bool weighted, bool projected, bool ddnnf);
+	void set_lit_weights(std::vector<std::string> tokens);
+	void set_gweight(std::vector<std::string> tokens);
+	void load			(std::istream& in, bool weighted, bool projected, bool ddnnf, int precition);
 	bool addClause	(std::vector<Glucose::Lit>& lits, bool learnt=false);
 
 	Glucose::lbool value (Glucose::Var x) const;
@@ -56,6 +59,7 @@ public:
 
 	// additional information
 	int freevars;
+	T_data one;
 	T_data gweight;
 
 	// information about correspondence with a given CNF

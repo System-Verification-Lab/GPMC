@@ -60,7 +60,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
-OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+OF OR IN CONNECTION WITH THE ÍSOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  **************************************************************************************************/
 
 #include <errno.h>
@@ -69,6 +69,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <zlib.h>
 #include <gmpxx.h>
 #include <mpfr/mpreal.h>
+#include "mpc.h"
 
 #include "utils/System.h"
 #include "utils/ParseUtils.h"
@@ -167,6 +168,19 @@ static void printResult(bool sat, Mode mode, const mpfr::mpreal& result) {
 		}
 		cout.precision(15);
 		PrintLog10(result);
+	}
+}
+static void printResult(bool sat, Mode mode, const mpc_t* result) {
+	printf("this is complex!!!");
+	printf("s %s\n", sat ? "SATISFIABLE" : "UNSATISFIABLE");
+	printMode(mode);
+	if(!sat) {
+		printf("c s exact arb int 0\n");
+		printf("c s log10-estimate -inf\n");
+	} else {
+		cout << "c s exact arb int " << result << endl;
+		cout.precision(15);
+		// PrintLog10(result);
 	}
 }
 
@@ -317,7 +331,7 @@ int main(int argc, char** argv)
 			if(config.cntr.precision > 15)
 				mpfr::mpreal::set_default_prec(mpfr::digits2bits(config.cntr.precision));
 
-			Counter<mpfr::mpreal> S(config);
+			Counter<mpc_t*> S(config); //FIXME DEKEL change to complex
 			main_mc(S, filename);
 		}
 

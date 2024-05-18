@@ -39,10 +39,10 @@ class Decision {
 	NodeIndex nodes[2];
 
 public:
-	Decision(int trail_pos, unsigned basecomp) :
+	Decision(int trail_pos, unsigned basecomp, T_data one) :
 		trail_pos_(trail_pos), cur_branch_(false), basecomp_(basecomp),
 		splitcompFrom_(basecomp + 1), splitcompEnd_(basecomp + 1), num_cur_branch_comps(0), models_{ 0, 0 }, hasmodel_{false, false} {
-		branch_weight_ = 1;
+		branch_weight_ = one;
 		nodes[0] = nodes[1] = BOTTOM_NODE;
 	}
 
@@ -572,6 +572,7 @@ class ComponentManager {
 	uint64_t components;
 	uint64_t num_try_split;
 
+	T_data one;
 	vector<Decision<T_data>> dl_;
 	vector<Component*> comp_stack_;
 
@@ -596,7 +597,7 @@ public:
 	}
 
 	void setConfig(ConfigComponentManager cfg) { this->config = cfg; }
-	void init(int nvars, int npvars, const vec<CRef>& sclauses, const ClauseAllocator& sca);
+	void init(int nvars, int npvars, const vec<CRef>& sclauses, const ClauseAllocator& sca, T_data one);
 
 	int splitComponent(const vec<lbool>& assigns, const vec<T_data>& lit_weight = {});
 
@@ -610,7 +611,7 @@ public:
 		return *(dl_.end() - 2);
 	}
 	void pushDecision(int trailp) {
-		dl_.push_back(Decision<T_data>(trailp, comp_stack_.size() - 1));
+		dl_.push_back(Decision<T_data>(trailp, comp_stack_.size() - 1, one));
 	}
 	void popDecision() {
 		dl_.pop_back();
@@ -728,7 +729,7 @@ protected:
 	}    // The current value of a literal.
 
 	void initComponentStack(int nvars, int ncls);
-	void initDecisionStack();
+	void initDecisionStack(T_data one);
 
 	void searchComponent(Var seed_var, const vec<lbool>& assigns,
 			int& nvar_in_comp, int& ncls_in_comp);
